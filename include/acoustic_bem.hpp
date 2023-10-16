@@ -2,6 +2,7 @@
 #define ACOUSTIC_BEM_HPP
 
 #include <fstream>
+#include <cassert>
 
 #include "defs_dealii.hpp"
 #include "helmholtz_kernel.hpp"
@@ -18,9 +19,12 @@ private:
     void setup_system();
     void assemble_matrices();
     void solve();
+    void radiate();
     void write_outputs() const;
 
-    bool isCloseInteraction(const dealii::Triangulation<1,2>::cell_iterator &_cell1,const dealii::Triangulation<1,2>::cell_iterator &_cell2) const;
+    unsigned int isCloseInteraction(const dealii::Triangulation<1,2>::cell_iterator &_cell1,const dealii::Triangulation<1,2>::cell_iterator &_cell2) const;
+
+    void buildNonSingularCellMatrix(const dealii::Triangulation<1,2>::cell_iterator &_cell1,const dealii::Triangulation<1,2>::cell_iterator &_cell2,dealii::FEValues<1,2> &_tfe, dealii::FEValues<1,2> &_sfe);
 
 private:
     bool m_write_mesh;

@@ -19,7 +19,7 @@ void AcousticBEM::run()
 
 void AcousticBEM::setup_grids()
 {
-    dealii::GridGenerator::hyper_sphere(m_triangulation);
+    dealii::GridGenerator::hyper_sphere<2>(m_triangulation);
     m_triangulation.refine_global(8);
 
     if(m_write_mesh)
@@ -39,8 +39,68 @@ void AcousticBEM::setup_system()
     m_sol.reinit(m_dof_handler.n_dofs());
 }
 
-bool AcousticBEM::isCloseInteraction(const dealii::Triangulation<1,2>::cell_iterator &_cell1,const dealii::Triangulation<1,2>::cell_iterator &_cell2) const
+void AcousticBEM::assemble_matrices()
+{
+    dealii::QGauss<1> quadrature_far(m_qorder_far);
+    dealii::QGauss<1> quadrature_close(m_qorder_close);
+    dealii::FEValues<1,2> tfe_v_far(m_mapping,m_fe,quadrature_far,dealii::update_values | dealii::update_quadrature_points | dealii::update_JxW_values);
+    dealii::FEValues<1,2> tfe_v_close(m_mapping,m_fe,quadrature_close,dealii::update_values | dealii::update_quadrature_points | dealii::update_JxW_values);
+    dealii::FEValues<1,2> sfe_v_far(m_mapping,m_fe,quadrature_far,dealii::update_values | dealii::update_quadrature_points | dealii::update_JxW_values);
+    dealii::FEValues<1,2> sfe_v_close(m_mapping,m_fe,quadrature_close,dealii::update_values | dealii::update_quadrature_points | dealii::update_JxW_values);
+
+    const unsigned int n_q_far   = tfe_v_far.n_quadrature_points;
+    const unsigned int n_q_close = sfe_v_close.n_quadrature_points;
+
+    assert(n_q_far == sfe_v_far.n_quadrature_points);
+    assert(n_q_close == sfe_v_close.n_quadrature_points);
+
+    const unsigned int dofs_per_cell = m_fe.n_dofs_per_cell();
+
+    std::vector<dealii::types::global_dof_index> local_of_indices(dofs_per_cell);
+
+    dealii::FullMatrix<std::complex<double>> cell_matrix(dofs_per_cell,dofs_per_cell);
+    dealii::Vector<std::complex<double>> cell_rhs(dofs_per_cell);
+
+    // double loop, non-optimized as all the quadrature rules could be precomputed 
+    for(const auto &tcell: m_dof_handler.active_cell_iterators())
+    {
+        for(const auto &scell: m_dof_handler.active_cell_iterators())
+        {
+            auto position = isCloseInteraction(tcell,scell);
+        }
+    }
+}
+
+void AcousticBEM::solve()
+{
+    //
+}
+
+void AcousticBEM::radiate()
+{
+    //
+}
+
+unsigned int AcousticBEM::isCloseInteraction(const dealii::Triangulation<1,2>::cell_iterator &_cell1,const dealii::Triangulation<1,2>::cell_iterator &_cell2) const
 {
     // retourne 'true' si distance(centre_1,centre_2) <= m_close_coef*(longueur_1+longueur_2)
     // longueur <=> longueur de l'arete <=> distance point 1 au point 2
+    auto ctr1 = _cell1->center(true);
+    auto ctr2 = _cell2->center(true);
+    auto diam1 = _cell1->diameter();
+    auto diam2 = _cell2->diameter();
+    auto R = (ctr2-ctr1).norm();
+    if(R > m_close_coef*(diam1+diam2)) // far
+    {
+        return 0;
+    } 
+    else if(R > 1e-9) // close non-singular
+    {
+        return 1;
+    }
+    else // singular
+    {
+        return 2;
+    }
+
 }
