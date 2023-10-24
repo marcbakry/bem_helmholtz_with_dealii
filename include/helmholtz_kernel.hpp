@@ -10,8 +10,8 @@ class HelmholtzKernel
 {
 public:
     HelmholtzKernel(const std::complex<double> _kappa = std::complex<double>(0,0)): m_kappa(_kappa){};
-    std::complex<double> single_layer(const dealii::Tensor<1,2> &_R);
-    std::complex<double> single_layer(const dealii::Tensor<1,3> &_R);
+    std::complex<double> single_layer(const dealii::Point<2> &_R);
+    std::complex<double> single_layer(const dealii::Point<3> &_R);
 
 
 private:

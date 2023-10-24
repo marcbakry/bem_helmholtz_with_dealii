@@ -3,6 +3,8 @@
 
 #include <fstream>
 #include <cassert>
+#include <complex>
+#include <cmath>
 
 #include "defs_dealii.hpp"
 #include "helmholtz_kernel.hpp"
@@ -24,7 +26,11 @@ private:
 
     unsigned int isCloseInteraction(const dealii::Triangulation<1,2>::cell_iterator &_cell1,const dealii::Triangulation<1,2>::cell_iterator &_cell2) const;
 
-    void buildNonSingularCellMatrix(const dealii::Triangulation<1,2>::cell_iterator &_cell1,const dealii::Triangulation<1,2>::cell_iterator &_cell2,dealii::FEValues<1,2> &_tfe, dealii::FEValues<1,2> &_sfe);
+    void buildNonSingularCellMatrix(const dealii::Triangulation<1,2>::cell_iterator &_tcell,const dealii::Triangulation<1,2>::cell_iterator &_scell,dealii::FEValues<1,2> &_tfe, dealii::FEValues<1,2> &_sfe, dealii::FullMatrix<std::complex<double>> &_cmatrix);
+
+    void buildSingularCellMatrix(const dealii::Triangulation<1,2>::cell_iterator &_tcell,const dealii::Triangulation<1,2>::cell_iterator &_scell,dealii::FEValues<1,2> &_tfe,dealii::FullMatrix<std::complex<double>> &_cmatrix);
+
+    void buildRHSCellVector(const dealii::Triangulation<1,2>::cell_iterator &_tcell,dealii::FEValues<1,2> &_tfe,dealii::Vector<std::complex<double>> &_cvector);
 
 private:
     bool m_write_mesh;

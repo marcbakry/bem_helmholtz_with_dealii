@@ -1,13 +1,13 @@
 #include "helmholtz_kernel.hpp"
 
-std::complex<double> HelmholtzKernel::single_layer(const dealii::Tensor<1,2> &_R)
+std::complex<double> HelmholtzKernel::single_layer(const dealii::Point<2> &_R)
 {
     auto kr = m_kappa*_R.norm();
     // compute using series
     return std::complex<double>(0,0.25)*fast_H1_0(kr);
 }
 
-std::complex<double> HelmholtzKernel::single_layer(const dealii::Tensor<1,3> &_R)
+std::complex<double> HelmholtzKernel::single_layer(const dealii::Point<3> &_R)
 {
     auto r  = _R.norm();
     auto ikr = std::complex<double>(0,1)*m_kappa*r;

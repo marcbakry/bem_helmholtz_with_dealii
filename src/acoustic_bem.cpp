@@ -15,10 +15,14 @@ AcousticBEM::AcousticBEM(const std::complex<double> _kappa): m_kernel(_kappa),m_
 void AcousticBEM::run()
 {
     setup_grids();
+    setup_system();
+    assemble_matrices();
+    solve();
 }
 
 void AcousticBEM::setup_grids()
 {
+    std::cout << "- Setup grid... " << std::flush;
     dealii::GridGenerator::hyper_sphere<2>(m_triangulation);
     m_triangulation.refine_global(8);
 
@@ -29,22 +33,29 @@ void AcousticBEM::setup_grids()
         m_gout.write_vtk(m_triangulation,os);
         os.close();
     }
+    std::cout << "Done." << std::endl;
 }
 
 void AcousticBEM::setup_system()
 {
+    std::cout << "- Setup system... " << std::flush;
     m_dof_handler.distribute_dofs(m_fe);
     m_lhs.reinit(m_dof_handler.n_dofs(),m_dof_handler.n_dofs());
     m_rhs.reinit(m_dof_handler.n_dofs());
     m_sol.reinit(m_dof_handler.n_dofs());
+    std::cout << "Done." << std::endl;
 }
 
 void AcousticBEM::assemble_matrices()
 {
+    std::cout << "- Assemble matrices... " << std::flush;
     dealii::QGauss<1> quadrature_far(m_qorder_far);
     dealii::QGauss<1> quadrature_close(m_qorder_close);
+    dealii::QGauss<1> quadrature_singular(m_qorder_singular);
     dealii::FEValues<1,2> tfe_v_far(m_mapping,m_fe,quadrature_far,dealii::update_values | dealii::update_quadrature_points | dealii::update_JxW_values);
     dealii::FEValues<1,2> tfe_v_close(m_mapping,m_fe,quadrature_close,dealii::update_values | dealii::update_quadrature_points | dealii::update_JxW_values);
+    dealii::FEValues<1,2> tfe_v_singular(m_mapping,m_fe,quadrature_singular,dealii::update_values | dealii::update_quadrature_points | dealii::update_JxW_values);
+
     dealii::FEValues<1,2> sfe_v_far(m_mapping,m_fe,quadrature_far,dealii::update_values | dealii::update_quadrature_points | dealii::update_JxW_values);
     dealii::FEValues<1,2> sfe_v_close(m_mapping,m_fe,quadrature_close,dealii::update_values | dealii::update_quadrature_points | dealii::update_JxW_values);
 
@@ -56,9 +67,9 @@ void AcousticBEM::assemble_matrices()
 
     const unsigned int dofs_per_cell = m_fe.n_dofs_per_cell();
 
-    std::vector<dealii::types::global_dof_index> local_of_indices(dofs_per_cell);
+    std::vector<dealii::types::global_dof_index> local_dof_indices(dofs_per_cell);
 
-    dealii::FullMatrix<std::complex<double>> cell_matrix(dofs_per_cell,dofs_per_cell);
+    dealii::FullMatrix<std::complex<double>> cell_lhs(dofs_per_cell,dofs_per_cell);
     dealii::Vector<std::complex<double>> cell_rhs(dofs_per_cell);
 
     // double loop, non-optimized as all the quadrature rules could be precomputed 
@@ -67,13 +78,127 @@ void AcousticBEM::assemble_matrices()
         for(const auto &scell: m_dof_handler.active_cell_iterators())
         {
             auto position = isCloseInteraction(tcell,scell);
+            switch(position)
+            {
+                case 0: // interaction lointaine
+                    buildNonSingularCellMatrix(tcell,scell,tfe_v_far,sfe_v_far,cell_lhs);
+                    break;
+                case 1: // interaction proche
+                    buildNonSingularCellMatrix(tcell,scell,tfe_v_close,sfe_v_close,cell_lhs);
+                    break;
+                case 2: // interaction singuliere
+                    buildSingularCellMatrix(tcell,scell,tfe_v_singular,cell_lhs);
+                    break;
+                default:
+                    std::cout << "Unknown cell -> cell interaction: " << position << std::endl;
+                    std::exit(EXIT_FAILURE);
+            }
+            
+            for(unsigned int i=0; i<dofs_per_cell; ++i)
+            {
+                for(unsigned int j=0; j<dofs_per_cell; ++j)
+                {
+                    m_lhs(local_dof_indices[i],local_dof_indices[j]) += cell_lhs(i,j);
+                }
+            }
+        }
+        // right-hand-side
+        buildRHSCellVector(tcell,tfe_v_far,cell_rhs);
+        for(unsigned int i=0; i<dofs_per_cell; ++i)
+        {
+            m_rhs(local_dof_indices[i]) += cell_rhs(i);
+        }
+    }
+    std::cout << "Done." << std::endl;
+}
+
+void AcousticBEM::buildRHSCellVector(const dealii::Triangulation<1,2>::cell_iterator &_tcell,dealii::FEValues<1,2> &_tfe,dealii::Vector<std::complex<double>> &_cvector)
+{
+    _cvector = 0;
+    //
+    _tfe.reinit(_tcell);
+    for(unsigned int iq_t: _tfe.quadrature_point_indices())
+    {
+        auto &xq_t = _tfe.quadrature_point(iq_t);
+        auto pw = std::exp(std::complex<double>(0.0,1.0)*m_kappa*xq_t(0));
+        for(unsigned int i_t:_tfe.dof_indices())
+        {
+            _cvector(i_t) += _tfe.shape_value(i_t,iq_t)*pw*_tfe.JxW(iq_t);
+        }
+    }
+}
+
+void AcousticBEM::buildSingularCellMatrix(const dealii::Triangulation<1,2>::cell_iterator &_tcell,const dealii::Triangulation<1,2>::cell_iterator &_scell,dealii::FEValues<1,2> &_tfe,dealii::FullMatrix<std::complex<double>> &_cmatrix)
+{
+    /////////////////////////////////////////
+    // integrate the singular interactions //
+    /////////////////////////////////////////
+    _cmatrix = 0;
+    _tfe.reinit(_tcell);
+    // loop over all 't'arget quadrature points
+    for(unsigned int iq_t: _tfe.quadrature_point_indices())
+    {
+        //
+        const auto &xq_t = _tfe.quadrature_point(iq_t);
+        dealii::QGaussLogR<1> log_quadrature(m_qorder_close,_tfe.get_quadrature().point(iq_t),1.0,true);
+        dealii::FEValues<1,2> log_fevalues(m_mapping,m_fe,log_quadrature,dealii::update_values | dealii::update_quadrature_points | dealii::update_JxW_values);
+        // loop over 's'ource points
+        for(unsigned int iq_s: log_fevalues.quadrature_point_indices())
+        {
+            const auto &xq_s = log_fevalues.quadrature_point(iq_s);
+            auto kernel_value = m_kernel.single_layer(dealii::Point<2>(xq_t(0)-xq_s(0),xq_t(1)-xq_s(1)));
+            for(unsigned int i_t: _tfe.dof_indices())
+            {
+                for(unsigned int i_s: log_fevalues.dof_indices())
+                {
+                    _cmatrix(i_t,i_s) += kernel_value*_tfe.shape_value(i_t,iq_t)*log_fevalues.shape_value(i_s,iq_s)*_tfe.JxW(iq_t)*log_fevalues.JxW(iq_s); // could be optimized
+                }
+            }
+        }
+    }
+
+}
+
+void AcousticBEM::buildNonSingularCellMatrix(const dealii::Triangulation<1,2>::cell_iterator &_tcell,const dealii::Triangulation<1,2>::cell_iterator &_scell,dealii::FEValues<1,2> &_tfe, dealii::FEValues<1,2> &_sfe, dealii::FullMatrix<std::complex<double>> &_cmatrix)
+{
+    // reinitialize cell matrix
+    _cmatrix = 0;
+    // initialize the quadrature data on the 't'arget cell and 's'ource cell
+    _tfe.reinit(_tcell);
+    _sfe.reinit(_scell);
+    // loop over target and source quadrature points
+    for(unsigned int iq_t: _tfe.quadrature_point_indices())
+    {
+        auto &xq_t = _tfe.quadrature_point(iq_t);
+        for(unsigned int iq_s: _sfe.quadrature_point_indices())
+        {
+            auto &xq_s = _sfe.quadrature_point(iq_s);
+            // compute the value of the kernel
+            auto kernel_value = m_kernel.single_layer(dealii::Point<2>(xq_t(0)-xq_s(0),xq_t(1)-xq_s(1)));
+            for(unsigned int i_t: _tfe.dof_indices())
+            {
+                for(unsigned int i_s: _sfe.dof_indices())
+                {
+                    _cmatrix(i_t,i_s) += kernel_value*_tfe.shape_value(i_t,iq_t)*_sfe.shape_value(i_s,iq_s)*_tfe.JxW(iq_t)*_sfe.JxW(iq_s); // could be optimized
+                }
+            }
         }
     }
 }
 
 void AcousticBEM::solve()
 {
-    //
+    std::cout << "- Solve... " << std::flush;
+    try
+    {
+        // en cours d'implementation
+    }
+    catch(const std::exception& e)
+    {
+        std::cerr << '\n' << e.what() << '\n';
+    }
+    
+    std::cout << "Done." << std::endl;
 }
 
 void AcousticBEM::radiate()
