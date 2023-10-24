@@ -40,7 +40,7 @@ deal_ii_initialize_cached_variables()
 
 add_executable(exe_1_acoustique_BEM_Dirichlet ./src/main.cpp)
 target_sources(exe_1_acoustique_BEM_Dirichlet PUBLIC ./src/laplace_kernel.cpp ./src/helmholtz_kernel.cpp ./src/acoustic_bem.cpp)
-target_include_directories(exe_1_acoustique_BEM_Dirichlet PUBLIC ./include)
+target_include_directories(exe_1_acoustique_BEM_Dirichlet PUBLIC ./include D:/Documents/Programmation/CPP/libs/libopenblas/include)
 
 deal_ii_setup_target(exe_1_acoustique_BEM_Dirichlet)
 

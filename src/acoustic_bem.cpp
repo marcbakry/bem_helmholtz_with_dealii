@@ -18,6 +18,7 @@ void AcousticBEM::run()
     setup_system();
     assemble_matrices();
     solve();
+    radiate();
 }
 
 void AcousticBEM::setup_grids()
@@ -67,7 +68,8 @@ void AcousticBEM::assemble_matrices()
 
     const unsigned int dofs_per_cell = m_fe.n_dofs_per_cell();
 
-    std::vector<dealii::types::global_dof_index> local_dof_indices(dofs_per_cell);
+    std::vector<dealii::types::global_dof_index> t_local_dof_indices(dofs_per_cell);
+    std::vector<dealii::types::global_dof_index> s_local_dof_indices(dofs_per_cell);
 
     dealii::FullMatrix<std::complex<double>> cell_lhs(dofs_per_cell,dofs_per_cell);
     dealii::Vector<std::complex<double>> cell_rhs(dofs_per_cell);
@@ -75,8 +77,11 @@ void AcousticBEM::assemble_matrices()
     // double loop, non-optimized as all the quadrature rules could be precomputed 
     for(const auto &tcell: m_dof_handler.active_cell_iterators())
     {
+        tcell->get_dof_indices(t_local_dof_indices);
         for(const auto &scell: m_dof_handler.active_cell_iterators())
         {
+            scell->get_dof_indices(s_local_dof_indices);
+            //
             auto position = isCloseInteraction(tcell,scell);
             switch(position)
             {
@@ -98,7 +103,7 @@ void AcousticBEM::assemble_matrices()
             {
                 for(unsigned int j=0; j<dofs_per_cell; ++j)
                 {
-                    m_lhs(local_dof_indices[i],local_dof_indices[j]) += cell_lhs(i,j);
+                    m_lhs(t_local_dof_indices[i],s_local_dof_indices[j]) += cell_lhs(i,j);
                 }
             }
         }
@@ -106,7 +111,7 @@ void AcousticBEM::assemble_matrices()
         buildRHSCellVector(tcell,tfe_v_far,cell_rhs);
         for(unsigned int i=0; i<dofs_per_cell; ++i)
         {
-            m_rhs(local_dof_indices[i]) += cell_rhs(i);
+            m_rhs(t_local_dof_indices[i]) += cell_rhs(i);
         }
     }
     std::cout << "Done." << std::endl;
@@ -120,7 +125,7 @@ void AcousticBEM::buildRHSCellVector(const dealii::Triangulation<1,2>::cell_iter
     for(unsigned int iq_t: _tfe.quadrature_point_indices())
     {
         auto &xq_t = _tfe.quadrature_point(iq_t);
-        auto pw = std::exp(std::complex<double>(0.0,1.0)*m_kappa*xq_t(0));
+        auto pw = -1.0*std::exp(std::complex<double>(0.0,1.0)*m_kappa*xq_t(0));
         for(unsigned int i_t:_tfe.dof_indices())
         {
             _cvector(i_t) += _tfe.shape_value(i_t,iq_t)*pw*_tfe.JxW(iq_t);
@@ -191,7 +196,22 @@ void AcousticBEM::solve()
     std::cout << "- Solve... " << std::flush;
     try
     {
-        // en cours d'implementation
+        auto lhs = dealii2lapack(m_lhs);
+        auto rhs = dealii2lapack(m_rhs);
+        auto sol = std::vector<zlpk>(rhs.size());
+        int N = rhs.size();
+        int NRHS = 1;
+        int LDA  = N;
+        std::vector<int> IPIV(N);
+        int LDB  = N;
+        int INFO;
+        zgesv_(&N,&NRHS,&(lhs[0]),&LDA,&(IPIV[0]),&(rhs[0]),&LDB,&INFO);
+        if(INFO != 0)
+        {
+            std::cout << "\nLapack solver ZGESV failed with error code '" << INFO << "'" << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
+        m_sol = lapack2dealii(sol);
     }
     catch(const std::exception& e)
     {
@@ -203,7 +223,52 @@ void AcousticBEM::solve()
 
 void AcousticBEM::radiate()
 {
+    std::cout << "- Radiate... " << std::flush;
+    // setup grid
+    auto dX = m_lX/m_nX;
+    auto dY = m_lY/m_nY;
+    auto N  = (m_nX+1)*(m_nY+1);
+    m_grid = std::vector<dealii::Point<2>>(N);
+    m_data = std::vector<std::complex<double>>(N,0);
+    unsigned int ind=0;
+    for(unsigned int i=0; i<m_nX+1;++i)
+    {
+        for(unsigned int j=0; j<m_nY+1;++j)
+        {
+            m_grid[ind](0)   = i*dX;
+            m_grid[ind++](1) = j*dY;
+        }
+    }
+    // setup quadratures for the test space
+    dealii::QGauss<1> quadrature_far(m_qorder_far);
+    dealii::FEValues<1,2> fe_values(m_mapping,m_fe,quadrature_far,dealii::update_values | dealii::update_quadrature_points | dealii::update_JxW_values);
+    const unsigned int dofs_per_cell = m_fe.n_dofs_per_cell();
+    std::vector<dealii::types::global_dof_index> s_local_dof_indices(dofs_per_cell);
     //
+    for(const auto &scell: m_dof_handler.active_cell_iterators()) // loop over elements, not optimized
+    {
+        //
+        fe_values.reinit(scell);
+        scell->get_dof_indices(s_local_dof_indices);
+        //
+        for(unsigned int iq: fe_values.quadrature_point_indices())
+        {
+            for(auto i: fe_values.dof_indices())
+            {
+                auto coef = (fe_values.shape_value(i,iq)*m_sol(s_local_dof_indices[i]))*fe_values.JxW(iq);
+                for(unsigned int ir=0; ir<m_grid.size(); ++ir)
+                {
+                    auto &xr = m_grid[ir];
+                    auto &xq = fe_values.quadrature_point(iq);
+                    auto kernel_value = m_kernel.single_layer(dealii::Point<2>(xr(0)-xq(0),xr(1)-xq(1)));
+                        m_data[ir] += kernel_value*coef;
+                }
+            }
+        }
+    }
+    // output to vtk file
+    //
+    std::cout << "Done." << std::endl;
 }
 
 unsigned int AcousticBEM::isCloseInteraction(const dealii::Triangulation<1,2>::cell_iterator &_cell1,const dealii::Triangulation<1,2>::cell_iterator &_cell2) const
@@ -228,4 +293,37 @@ unsigned int AcousticBEM::isCloseInteraction(const dealii::Triangulation<1,2>::c
         return 2;
     }
 
+}
+
+std::vector<zlpk> AcousticBEM::dealii2lapack(const dealii::FullMatrix<std::complex<double>> &_mat) const 
+{
+    auto V = std::vector<zlpk>(_mat.n_cols()*_mat.n_rows());
+    for(unsigned int j=0; j<_mat.n_cols(); ++j)
+    {
+        for(unsigned int i=0; i<_mat.n_rows(); ++i)
+        {
+            V[j*_mat.n_rows()+i] = _mat(i,j);
+        }
+    }
+    return V;
+}
+
+std::vector<zlpk> AcousticBEM::dealii2lapack(const dealii::Vector<std::complex<double>> &_vec) const
+{
+    auto V = std::vector<zlpk>(_vec.size());
+    for(unsigned int i=0; i<V.size(); ++i)
+    {
+        V[i] = _vec(i);
+    }
+    return V;
+}
+
+dealii::Vector<std::complex<double>> AcousticBEM::lapack2dealii(const std::vector<zlpk> &_vec) const
+{
+    auto V = dealii::Vector<std::complex<double>>(_vec.size());
+    for(unsigned int i=0; i<V.size(); ++i)
+    {
+        V(i) = _vec[i];
+    }
+    return V;
 }

@@ -9,6 +9,26 @@
 #include "defs_dealii.hpp"
 #include "helmholtz_kernel.hpp"
 
+#include "cblas.h" // use LAPACK
+
+extern "C"
+{
+    typedef struct{double r,i;} __CLPK_doublecomplex;
+}
+class zlpk : public __CLPK_doublecomplex
+{
+public:
+    zlpk() {r=0; i=0;};
+    zlpk(double v, double w=0) {r=v; i=w;};
+    zlpk(std::complex<double> v) {r=v.real(); i=v.imag();};
+    operator std::complex<double>() const {return std::complex<double>(r,i);};
+};
+
+extern "C"
+{
+    void zgesv_(int* N, int* NRHS, zlpk* A, int* LDA, int* IPIV, zlpk* B, int* LDB, int* INFO);
+}
+
 class AcousticBEM
 {
 public:
@@ -32,6 +52,10 @@ private:
 
     void buildRHSCellVector(const dealii::Triangulation<1,2>::cell_iterator &_tcell,dealii::FEValues<1,2> &_tfe,dealii::Vector<std::complex<double>> &_cvector);
 
+    std::vector<zlpk> dealii2lapack(const dealii::FullMatrix<std::complex<double>> &_mat) const;
+    std::vector<zlpk> dealii2lapack(const dealii::Vector<std::complex<double>> &_vec) const;
+    dealii::Vector<std::complex<double>> lapack2dealii(const std::vector<zlpk> &_vec) const;
+
 private:
     bool m_write_mesh;
     unsigned int m_qorder_singular;
@@ -51,6 +75,14 @@ private:
     dealii::FullMatrix<std::complex<double>> m_lhs;
     dealii::Vector<std::complex<double>> m_rhs;
     dealii::Vector<std::complex<double>> m_sol;
+
+    // grille de representation
+    unsigned int m_nX; // nombre de cellules selon direction X
+    unsigned int m_nY; // idem precedemment
+    double m_lX;
+    double m_lY;
+    std::vector<dealii::Point<2>> m_grid;
+    std::vector<std::complex<double>> m_data;
 };
 
 #endif
