@@ -16,7 +16,7 @@ std::complex<double> HelmholtzKernel::single_layer(const dealii::Point<3> &_R)
 
 std::complex<double> HelmholtzKernel::fast_H1_0(const std::complex<double> _X)
 { 
-    return std::abs(1.0/3*_X) <= 1.0 ? H1_0_low(_X) : H1_0_high(_X);
+    return std::abs((1.0/3.0)*_X) <= 1.0 ? H1_0_low(_X) : H1_0_high(_X);
 }
 
 std::complex<double> HelmholtzKernel::fast_H1_0(const double _X)
@@ -26,9 +26,9 @@ std::complex<double> HelmholtzKernel::fast_H1_0(const double _X)
 
 std::complex<double> HelmholtzKernel::H1_0_low(const std::complex<double> _X)
 {
-    auto T = _X*_X;
-    auto J0 = std::complex<double>(0.00021,0);
-    J0 = J0*T - 0.00029333;
+    auto T = (1.0/3.0)*_X;
+    T = T*T;
+    auto J0 = 0.00021*T - 0.00029333;
     J0 = J0*T + 0.0444479;
     J0 = J0*T - 0.3163866;
     J0 = J0*T + 1.2656208;
@@ -41,7 +41,7 @@ std::complex<double> HelmholtzKernel::H1_0_low(const std::complex<double> _X)
     Y0 = Y0*T - 0.74350384;
     Y0 = Y0*T + 0.60559366;
     Y0 = Y0*T + 0.36746691;
-    Y0 += 2/dealii::numbers::PI*J0*std::log(0.5*_X);
+    Y0 += 2.0/dealii::numbers::PI*J0*std::log(0.5*_X);
 
     return J0 + std::complex<double>(0,1)*Y0;
 }

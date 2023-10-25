@@ -5,7 +5,7 @@ endif()
 
 project(1_acoustique_BEM_Dirichlet LANGUAGES CXX)
 
-set(CMAKE_VERBOSE_MAKEFILE TRUE)
+set(CMAKE_VERBOSE_MAKEFILE FALSE)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE Release)
 

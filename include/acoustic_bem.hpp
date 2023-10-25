@@ -6,6 +6,7 @@
 #include <complex>
 #include <cmath>
 #include <utility>
+#include <cassert>
 
 #include "defs_dealii.hpp"
 #include "helmholtz_kernel.hpp"
