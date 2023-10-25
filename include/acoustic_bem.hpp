@@ -5,6 +5,7 @@
 #include <cassert>
 #include <complex>
 #include <cmath>
+#include <utility>
 
 #include "defs_dealii.hpp"
 #include "helmholtz_kernel.hpp"
@@ -82,7 +83,7 @@ private:
     double m_lX;
     double m_lY;
     std::vector<dealii::Point<2>> m_grid;
-    std::vector<std::complex<double>> m_data;
+    std::vector<std::pair<std::complex<double>,std::complex<double>>> m_data;
 };
 
 #endif
