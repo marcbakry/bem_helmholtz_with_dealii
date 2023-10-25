@@ -34,7 +34,7 @@ void AcousticBEM::setup_grids()
     std::cout << "- Setup grid... " << std::flush;
     dealii::GridGenerator::hyper_sphere<2>(m_triangulation,dealii::Point<2>(0,0),0.5);
     // m_triangulation.refine_global(4);
-    m_triangulation.refine_global(10);
+    m_triangulation.refine_global(8);
 
     if(m_write_mesh)
     {
@@ -158,14 +158,13 @@ void AcousticBEM::buildSingularCellMatrix(const dealii::Triangulation<1,2>::cell
         //
         const auto &xq_t = _tfe.quadrature_point(iq_t);
         // singular quadrature
-        dealii::QGaussLogR<1> log_quadrature(m_qorder_close,_tfe.get_quadrature().point(iq_t),1.0,true);
+        dealii::QGaussLogR<1> log_quadrature(m_qorder_singular+1,_tfe.get_quadrature().point(iq_t),1.0,true);
         dealii::FEValues<1,2> log_fevalues(m_mapping,m_fe,log_quadrature,dealii::update_values | dealii::update_quadrature_points | dealii::update_JxW_values);
         log_fevalues.reinit(_scell);
         // loop over 's'ource points
         for(unsigned int iq_s: log_fevalues.quadrature_point_indices())
         {
             const auto &xq_s = log_fevalues.quadrature_point(iq_s);
-            auto R = dealii::Point<2>(xq_t(0)-xq_s(0),xq_t(1)-xq_s(1)).norm();
             auto kernel_value = m_kernel.single_layer(dealii::Point<2>(xq_t(0)-xq_s(0),xq_t(1)-xq_s(1)));
             for(unsigned int i_t: _tfe.dof_indices())
             {
