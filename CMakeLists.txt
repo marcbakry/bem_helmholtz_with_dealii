@@ -41,12 +41,16 @@ deal_ii_initialize_cached_variables()
 add_executable(exe_1_acoustique_BEM_Dirichlet ./src/main.cpp)
 target_sources(exe_1_acoustique_BEM_Dirichlet PUBLIC ./src/laplace_kernel.cpp ./src/helmholtz_kernel.cpp ./src/acoustic_bem.cpp)
 target_include_directories(exe_1_acoustique_BEM_Dirichlet PUBLIC ./include D:/Documents/Programmation/CPP/libs/libopenblas/include)
-
 deal_ii_setup_target(exe_1_acoustique_BEM_Dirichlet)
-
 TARGET_LINK_LIBRARIES(exe_1_acoustique_BEM_Dirichlet TBB::tbb)
-
 set_property(TARGET exe_1_acoustique_BEM_Dirichlet PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+
+add_executable(exe_1_acoustique_tests ./src/main_tests.cpp)
+target_sources(exe_1_acoustique_tests PUBLIC ./src/helmholtz_kernel.cpp)
+target_include_directories(exe_1_acoustique_tests PUBLIC ./include D:/Documents/Programmation/CPP/libs/libopenblas/include)
+deal_ii_setup_target(exe_1_acoustique_tests)
+TARGET_LINK_LIBRARIES(exe_1_acoustique_tests TBB::tbb)
+set_property(TARGET exe_1_acoustique_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
 
 if(WIN32)
     add_custom_command(TARGET exe_1_acoustique_BEM_Dirichlet POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy D:/Documents/Programmation/CPP/libs/libopenblas/bin/libopenblas.dll ${1_acoustique_BEM_Dirichlet_BINARY_DIR})
