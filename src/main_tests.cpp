@@ -22,9 +22,9 @@ void test_hankel_functions()
     // initialize arguments
     unsigned int N = 100;
     double xMax = 10.0;
-    std::vector<double> x(N+1);
+    std::vector<double> x(N);
     auto dX = xMax/N;
-    for(auto i=0; i<x.size(); ++i) x[i] = i*dX;
+    for(auto i=0; i<x.size(); ++i) x[i] = dX + i*dX;
     // bessel functions
     std::vector<double> J(x.size()), Y(x.size());
     std::vector<std::complex<double>> H(x.size());

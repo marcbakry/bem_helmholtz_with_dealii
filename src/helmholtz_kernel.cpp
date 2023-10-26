@@ -64,5 +64,5 @@ std::complex<double> HelmholtzKernel::H1_0_high(const std::complex<double> _X)
     F0 = F0*T - 0.00000077;
     F0 = F0*T + 0.79788456;
 
-    return F0*std::exp(TH0)/std::sqrt(_X);
+    return F0*std::exp(std::complex<double>(0,1)*TH0)/std::sqrt(_X);
 }
