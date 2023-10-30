@@ -210,25 +210,11 @@ void AcousticBEM::solve()
     std::cout << "- Solve... " << std::flush;
     try
     {
-        auto lhs = dealii2lapack(m_lhs);
-        auto rhs = dealii2lapack(m_rhs);
-        int N = rhs.size();
-        int NRHS = 1;
-        int LDA  = N;
-        std::vector<int> IPIV(N);
-        int LDB  = N;
-        int INFO;
-        zgesv_(&N,&NRHS,&(lhs[0]),&LDA,&(IPIV[0]),&(rhs[0]),&LDB,&INFO);
-        if(INFO != 0)
-        {
-            std::cout << "\nLapack solver ZGESV failed with error code '" << INFO << "'" << std::endl;
-            std::exit(EXIT_FAILURE);
-        }
-        for(unsigned int i=0; i<rhs.size(); ++i)
-        {
-            assert(rhs[i].r == rhs[i].r && rhs[i].i == rhs[i].i); // check nan
-        }
-        m_sol = lapack2dealii(rhs);
+        // LU-factorization of the LHS, required before solve
+        m_lhs.compute_lu_factorization(); // works in-place
+        // solve using LAPACK
+        m_sol = m_rhs; // not required, but to keep track for debugging
+        m_lhs.solve(m_sol);
     }
     catch(const std::exception& e)
     {
@@ -377,37 +363,4 @@ unsigned int AcousticBEM::isCloseInteraction(const dealii::Triangulation<1,2>::c
         return 2;
     }
 
-}
-
-std::vector<zlpk> AcousticBEM::dealii2lapack(const dealii::FullMatrix<std::complex<double>> &_mat) const 
-{
-    auto V = std::vector<zlpk>(_mat.n_cols()*_mat.n_rows());
-    for(unsigned int j=0; j<_mat.n_cols(); ++j)
-    {
-        for(unsigned int i=0; i<_mat.n_rows(); ++i)
-        {
-            V[j*_mat.n_rows()+i] = _mat(i,j);
-        }
-    }
-    return V;
-}
-
-std::vector<zlpk> AcousticBEM::dealii2lapack(const dealii::Vector<std::complex<double>> &_vec) const
-{
-    auto V = std::vector<zlpk>(_vec.size());
-    for(unsigned int i=0; i<V.size(); ++i)
-    {
-        V[i] = _vec(i);
-    }
-    return V;
-}
-
-dealii::Vector<std::complex<double>> AcousticBEM::lapack2dealii(const std::vector<zlpk> &_vec) const
-{
-    auto V = dealii::Vector<std::complex<double>>(_vec.size());
-    for(unsigned int i=0; i<V.size(); ++i)
-    {
-        V(i) = _vec[i];
-    }
-    return V;
 }
